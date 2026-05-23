@@ -127,6 +127,32 @@ SpellsConfig.SPELLS["AstralWand"] = {
 	Damage=38, ManaCost=0, Cooldown=0.8, Range=75, Speed=130,
 	Effect={Color=Color3.fromRGB(140,200,255), Secondary=Color3.fromRGB(220,240,255), Element="Arcane"},
 }
+-- CrystalStaff weapon family (all rarities)
+SpellsConfig.SPELLS["CrystalStaff"] = {
+	Element="Ice", Type="Projectile", Tier="Basic",
+	Damage=25, ManaCost=0, Cooldown=0.9, Range=65, Speed=110,
+	Effect={Color=Color3.fromRGB(100,200,255), Secondary=Color3.fromRGB(180,230,255), Element="Ice"},
+}
+SpellsConfig.SPELLS["CrystalShard"] = {
+	Element="Ice", Type="Projectile", Tier="Rare",
+	Damage=42, ManaCost=0, Cooldown=0.75, Range=75, Speed=125,
+	Effect={Color=Color3.fromRGB(80,180,255), Secondary=Color3.fromRGB(150,210,255), Element="Ice"},
+}
+SpellsConfig.SPELLS["CrystalScepter"] = {
+	Element="Ice", Type="Projectile", Tier="Epic",
+	Damage=58, ManaCost=0, Cooldown=0.6, Range=85, Speed=135,
+	Effect={Color=Color3.fromRGB(60,150,255), Secondary=Color3.fromRGB(120,190,255), Element="Ice"},
+}
+SpellsConfig.SPELLS["CrystalOmega"] = {
+	Element="Ice", Type="Projectile", Tier="Legendary",
+	Damage=75, ManaCost=0, Cooldown=0.5, Range=95, Speed=145,
+	Effect={Color=Color3.fromRGB(40,120,255), Secondary=Color3.fromRGB(100,170,255), Element="Ice"},
+}
+SpellsConfig.SPELLS["CrystalDivinity"] = {
+	Element="Ice", Type="Projectile", Tier="Mythic",
+	Damage=95, ManaCost=0, Cooldown=0.4, Range=105, Speed=160,
+	Effect={Color=Color3.fromRGB(20,80,255), Secondary=Color3.fromRGB(80,150,255), Element="Ice"},
+}
 -- Legacy fallback
 SpellsConfig.SPELLS["AzUkr_wpn"] = {
 	Element="Ice", Type="Projectile", Tier="Basic",
@@ -160,11 +186,16 @@ function SpellsConfig.GetWeaponTier(name)
 	local tiers = {
 		Stick = "Common",
 		StaffOfSparks = "Rare",
-		AstralWand = "Rare",      -- NEW rare wand
+		AstralWand = "Rare",
 		MasterStaff = "Epic",
 		StaffOmega = "Legendary",
 		KorbloxStaff = "Epic",
 		AzureIceStaff = "Common",
+		CrystalStaff = "Common",
+		CrystalShard = "Rare",
+		CrystalScepter = "Epic",
+		CrystalOmega = "Legendary",
+		CrystalDivinity = "Mythic",
 	}
 	return tiers[name] or "Common"
 end

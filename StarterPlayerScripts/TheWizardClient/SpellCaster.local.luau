@@ -15,6 +15,20 @@ local data, cooldowns = nil, {}
 local V = Vector3.new
 local C = function(r,g,b) return Color3.fromRGB(r,g,b) end
 
+-- Rarity-based effect multipliers (5 levels: Common, Rare, Epic, Legendary, Mythic)
+local RARITY_CONFIG = {
+	Common = { projectileSize = 1, trailLength = 1, glowIntensity = 1, particleCount = 30, lightRange = 8 },
+	Rare = { projectileSize = 1.2, trailLength = 1.3, glowIntensity = 1.5, particleCount = 50, lightRange = 12 },
+	Epic = { projectileSize = 1.5, trailLength = 1.6, glowIntensity = 2, particleCount = 80, lightRange = 16 },
+	Legendary = { projectileSize = 1.8, trailLength = 2, glowIntensity = 2.5, particleCount = 120, lightRange = 22 },
+	Mythic = { projectileSize = 2.2, trailLength = 2.5, glowIntensity = 3, particleCount = 180, lightRange = 30 },
+}
+
+local function getRarityConfig(weaponName)
+	local tier = SpellsConfig.GetWeaponTier and SpellsConfig.GetWeaponTier(weaponName) or "Common"
+	return RARITY_CONFIG[tier] or RARITY_CONFIG.Common
+end
+
 data = GetData:InvokeServer()  -- fetch initial data immediately
 SyncData.OnClientEvent:Connect(function(d) data = d end)
 
@@ -445,8 +459,307 @@ local function ring(pos, col, sz, dur)
 	task.delay((dur or 0.5)+0.1, function() r:Destroy() end)
 end
 
+-- ══════ RARITY-BASED WEAPON PROJECTILE EFFECTS ══════
+local RarityEffects = {}
+
+-- Common: Simple ball dengan trail minimal (abu-abu)
+RarityEffects.Common = function(s, t, sp)
+	local p = mkP(s, 0.8, Color3.fromRGB(160, 160, 160))
+	p.Material = Enum.Material.SmoothPlastic
+	local trail = Instance.new("Trail")
+	trail.Color = ColorSequence.new(Color3.fromRGB(120, 120, 120), Color3.fromRGB(80, 80, 80))
+	trail.WidthScale = NumberSequence.new({NumberSequenceKeypoint.new(0, 0.8), NumberSequenceKeypoint.new(1, 0)})
+	trail.Lifetime = 0.3
+	local att0 = Instance.new("Attachment", p)
+	local att1 = Instance.new("Attachment", p)
+	att1.Position = Vector3.new(0, 0, -0.5)
+	trail.Attachment0 = att0
+	trail.Attachment1 = att1
+	trail.Parent = p
+	fly(p, t, sp.Speed or 100).Completed:Connect(function()
+		boom(t, Color3.fromRGB(140, 140, 140), 4, 0.25)
+		p:Destroy()
+	end)
+end
+
+-- Rare: Glowing orb dengan blue sparks (biru)
+RarityEffects.Rare = function(s, t, sp)
+	local p = mkP(s, 1.2, Color3.fromRGB(50, 150, 255))
+	p.Material = Enum.Material.Neon
+	mkL(p, Color3.fromRGB(100, 200, 255), 3, 12)
+	mkE(p, Color3.fromRGB(150, 220, 255), Color3.fromRGB(50, 150, 255), 0.8, 80, 25, 1)
+	-- Blue sparks trail
+	task.spawn(function()
+		while p and p.Parent do
+			local spark = mkP(p.Position + Vector3.new(math.random(-1, 1), math.random(-1, 1), math.random(-1, 1)), 0.15, Color3.fromRGB(150, 220, 255))
+			spark.Material = Enum.Material.Neon
+			TS:Create(spark, TweenInfo.new(0.25), {Transparency = 1, Size = Vector3.new(0.05, 0.05, 0.05)}):Play()
+			task.delay(0.3, function() spark:Destroy() end)
+			task.wait(0.05)
+		end
+	end)
+	fly(p, t, sp.Speed or 120).Completed:Connect(function()
+		boom(t, Color3.fromRGB(50, 150, 255), 8, 0.35)
+		ring(t, Color3.fromRGB(100, 200, 255), 12, 0.4)
+		p:Destroy()
+	end)
+end
+
+-- Epic: Spinning crystal dengan orbiting shards (ungu)
+RarityEffects.Epic = function(s, t, sp)
+	local crystal = mkP(s, 1.5, Color3.fromRGB(180, 50, 255), Enum.Material.Neon, Enum.PartType.Block)
+	crystal.Size = Vector3.new(1, 1.5, 1)
+	mkL(crystal, Color3.fromRGB(220, 150, 255), 4, 15)
+	-- Orbiting shards
+	local shards = {}
+	for i = 1, 4 do
+		local shard = mkP(s, 0.4, Color3.fromRGB(220, 150, 255), Enum.Material.Neon, Enum.PartType.Block)
+		shard.Size = Vector3.new(0.3, 0.8, 0.3)
+		table.insert(shards, shard)
+	end
+	-- Spin animation
+	task.spawn(function()
+		local angle = 0
+		while crystal and crystal.Parent do
+			angle += 12
+			crystal.CFrame = CFrame.new(crystal.Position) * CFrame.Angles(0, math.rad(angle), math.rad(angle * 0.5))
+			for i, shard in ipairs(shards) do
+				if shard.Parent then
+					local offset = CFrame.Angles(0, math.rad(angle + i * 90), 0) * Vector3.new(2.5, 0, 0)
+					shard.Position = crystal.Position + offset
+				end
+			end
+			task.wait()
+		end
+	end)
+	local d = math.clamp((t - s).Magnitude / (sp.Speed or 110), 0.08, 1.5)
+	TS:Create(crystal, TweenInfo.new(d, Enum.EasingStyle.Linear), {Position = t}):Play()
+	task.delay(d, function()
+		boom(t, Color3.fromRGB(180, 50, 255), 12, 0.4)
+		ring(t, Color3.fromRGB(220, 150, 255), 18, 0.5)
+		-- Shatter effect
+		for i = 1, 8 do
+			local frag = mkP(t + Vector3.new(math.random(-3, 3), math.random(0, 5), math.random(-3, 3)), 0.5, Color3.fromRGB(200, 100, 255))
+			TS:Create(frag, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+				Position = frag.Position + Vector3.new(math.random(-8, 8), math.random(3, 10), math.random(-8, 8)),
+				Transparency = 1, Size = Vector3.new(0.1, 0.1, 0.1)
+			}):Play()
+			task.delay(0.7, function() frag:Destroy() end)
+		end
+		for _, shard in ipairs(shards) do shard:Destroy() end
+		crystal:Destroy()
+	end)
+end
+
+-- Legendary: Golden phoenix effect dengan flames (emas)
+RarityEffects.Legendary = function(s, t, sp)
+	local body = mkP(s, 2, Color3.fromRGB(255, 200, 50))
+	body.Material = Enum.Material.Neon
+	mkL(body, Color3.fromRGB(255, 160, 0), 5, 20)
+	-- Phoenix wings
+	local wingL = mkP(s + Vector3.new(-2, 0.5, 0), 1.2, Color3.fromRGB(255, 180, 30))
+	local wingR = mkP(s + Vector3.new(2, 0.5, 0), 1.2, Color3.fromRGB(255, 180, 30))
+	-- Flame trail particles
+	mkE(body, Color3.fromRGB(255, 220, 100), Color3.fromRGB(255, 100, 0), 2, 150, 30, 1)
+	-- Golden flames trailing
+	task.spawn(function()
+		while body and body.Parent do
+			local flame = mkP(body.Position + Vector3.new(math.random(-1, 1), math.random(-1, 1), math.random(-1, 1)), 0.6, Color3.fromRGB(255, math.random(150, 220), 0))
+			flame.Material = Enum.Material.Neon
+			TS:Create(flame, TweenInfo.new(0.4), {Transparency = 1, Size = Vector3.new(0.1, 0.1, 0.1)}):Play()
+			task.delay(0.45, function() flame:Destroy() end)
+			task.wait(0.03)
+		end
+	end)
+	local d = math.clamp((t - s).Magnitude / (sp.Speed or 130), 0.08, 1.5)
+	TS:Create(body, TweenInfo.new(d, Enum.EasingStyle.Linear), {Position = t}):Play()
+	TS:Create(wingL, TweenInfo.new(d, Enum.EasingStyle.Linear), {Position = t + Vector3.new(-2, 0.5, 0)}):Play()
+	TS:Create(wingR, TweenInfo.new(d, Enum.EasingStyle.Linear), {Position = t + Vector3.new(2, 0.5, 0)}):Play()
+	task.delay(d, function()
+		-- Phoenix explosion
+		boom(t, Color3.fromRGB(255, 200, 50), 16, 0.5)
+		boom(t, Color3.fromRGB(255, 100, 0), 10, 0.35)
+		ring(t, Color3.fromRGB(255, 220, 100), 24, 0.6)
+		-- Flame burst
+		for i = 1, 12 do
+			local flame = mkP(t + Vector3.new(math.random(-5, 5), math.random(0, 8), math.random(-5, 5)), 1, Color3.fromRGB(255, math.random(150, 255), 0))
+			TS:Create(flame, TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+				Position = flame.Position + Vector3.new(math.random(-10, 10), math.random(5, 15), math.random(-10, 10)),
+				Transparency = 1, Size = Vector3.new(0.1, 0.1, 0.1)
+			}):Play()
+			task.delay(0.9, function() flame:Destroy() end)
+		end
+		body:Destroy()
+		wingL:Destroy()
+		wingR:Destroy()
+	end)
+end
+
+-- Mythic: Divine beam dengan rainbow particles (rainbow)
+RarityEffects.Mythic = function(s, t, sp)
+	-- Rainbow colors
+	local rainbowColors = {
+		Color3.fromRGB(255, 50, 50),   -- Red
+		Color3.fromRGB(255, 150, 50),  -- Orange
+		Color3.fromRGB(255, 255, 50),  -- Yellow
+		Color3.fromRGB(50, 255, 50),   -- Green
+		Color3.fromRGB(50, 150, 255),  -- Blue
+		Color3.fromRGB(150, 50, 255),  -- Purple
+		Color3.fromRGB(255, 50, 255),  -- Pink
+	}
+	-- Divine core
+	local core = mkP(s, 1.8, Color3.fromRGB(255, 255, 255))
+	core.Material = Enum.Material.Neon
+	mkL(core, Color3.new(1, 1, 1), 6, 25)
+	-- Orbiting rainbow orbs
+	local orbs = {}
+	for i = 1, 7 do
+		local orb = mkP(s, 0.5, rainbowColors[i])
+		orb.Material = Enum.Material.Neon
+		table.insert(orbs, orb)
+	end
+	-- Rainbow particle trail
+	task.spawn(function()
+		local colorIdx = 1
+		while core and core.Parent do
+			local particle = mkP(core.Position + Vector3.new(math.random(-0.5, 0.5), math.random(-0.5, 0.5), math.random(-0.5, 0.5)), 0.4, rainbowColors[colorIdx])
+			particle.Material = Enum.Material.Neon
+			TS:Create(particle, TweenInfo.new(0.5), {Transparency = 1, Size = Vector3.new(0.1, 0.1, 0.1)}):Play()
+			task.delay(0.55, function() particle:Destroy() end)
+			colorIdx = colorIdx % 7 + 1
+			task.wait(0.02)
+		end
+	end)
+	-- Orbit animation
+	task.spawn(function()
+		local angle = 0
+		while core and core.Parent do
+			angle += 8
+			for i, orb in ipairs(orbs) do
+				if orb.Parent then
+					local offset = CFrame.Angles(0, math.rad(angle + i * (360 / 7)), 0) * Vector3.new(3, 0, 0)
+					orb.Position = core.Position + offset
+				end
+			end
+			task.wait()
+		end
+	end)
+	local d = math.clamp((t - s).Magnitude / (sp.Speed or 140), 0.08, 1.5)
+	TS:Create(core, TweenInfo.new(d, Enum.EasingStyle.Linear), {Position = t}):Play()
+	task.delay(d, function()
+		-- Divine explosion with rainbow rings
+		for i, color in ipairs(rainbowColors) do
+			task.delay(i * 0.05, function()
+				ring(t, color, 10 + i * 4, 0.5)
+			end)
+		end
+		boom(t, Color3.new(1, 1, 1), 20, 0.6)
+		-- Rainbow burst particles
+		for i = 1, 20 do
+			local burst = mkP(t + Vector3.new(math.random(-3, 3), math.random(0, 8), math.random(-3, 3)), 0.8, rainbowColors[math.random(1, 7)])
+			burst.Material = Enum.Material.Neon
+			TS:Create(burst, TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+				Position = burst.Position + Vector3.new(math.random(-15, 15), math.random(5, 20), math.random(-15, 15)),
+				Transparency = 1, Size = Vector3.new(0.1, 0.1, 0.1)
+			}):Play()
+			task.delay(1.1, function() burst:Destroy() end)
+		end
+		for _, orb in ipairs(orbs) do orb:Destroy() end
+		core:Destroy()
+	end)
+end
+
 -- ══════ PER-SPELL ANIMATIONS ══════
 local SA = {}
+
+-- Generic weapon projectile with rarity-based effects
+local function createWeaponProjectile(startPos, target, spell, weaponName)
+	local config = getRarityConfig(weaponName)
+	local color = spell.Effect and spell.Effect.Color or Color3.new(1,1,1)
+	local secondary = spell.Effect and spell.Effect.Secondary or color
+	local speed = spell.Speed or 100
+	
+	-- Main projectile - size based on rarity
+	local mainSize = 0.8 * config.projectileSize
+	local p = mkP(startPos, mainSize, color)
+	
+	-- Light - intensity based on rarity
+	mkL(p, secondary, config.glowIntensity, config.lightRange)
+	
+	-- Particles - count based on rarity
+	mkE(p, secondary, color, 0.6 * config.projectileSize, config.particleCount, 20, config.glowIntensity)
+	
+	-- Trail effect for higher rarities
+	if config.trailLength > 1.3 then
+		local trailAtt0 = Instance.new("Attachment", p)
+		trailAtt0.Position = V(0, -mainSize/2, 0)
+		local trailAtt1 = Instance.new("Attachment", p)
+		trailAtt1.Position = V(0, mainSize/2, 0)
+		local trail = Instance.new("Trail")
+		trail.Attachment0 = trailAtt0
+		trail.Attachment1 = trailAtt1
+		trail.Color = ColorSequence.new({ColorSequenceKeypoint.new(0, color), ColorSequenceKeypoint.new(1, secondary)})
+		trail.WidthScale = NumberSequence.new({NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(1, 0)})
+		trail.Lifetime = 0.3 * config.trailLength
+		trail.Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0.3), NumberSequenceKeypoint.new(1, 1)})
+		trail.LightEmission = config.glowIntensity
+		trail.Parent = p
+	end
+	
+	-- Extra glow rings for Legendary/Mythic
+	if config.projectileSize >= 1.8 then
+		local ringCount = config.projectileSize >= 2.2 and 3 or 2
+		for i = 1, ringCount do
+			local ring = Instance.new("Part")
+			ring.Shape = Enum.PartType.Cylinder
+			ring.Size = V(0.15, mainSize * 2, mainSize * 2)
+			ring.CFrame = CFrame.new(startPos) * CFrame.Angles(0, 0, math.rad(90))
+			ring.Material = Enum.Material.Neon
+			ring.Color = secondary
+			ring.Anchored = true
+			ring.CanCollide = false
+			ring.CastShadow = false
+			ring.Transparency = 0.5
+			ring.Parent = workspace
+			
+			local ringDist = mainSize * 1.5 + i * 0.5
+			task.spawn(function()
+				local angle = 0
+				while p and p.Parent do
+					angle += 8
+					ring.CFrame = p.CFrame * CFrame.Angles(math.rad(angle + i * 120), 0, 0) * CFrame.new(ringDist, 0, 0)
+					task.wait()
+				end
+				ring:Destroy()
+			end)
+		end
+	end
+	
+	-- Fly to target
+	local d = math.clamp((target - startPos).Magnitude / speed, 0.08, 1.5)
+	TS:Create(p, TweenInfo.new(d, Enum.EasingStyle.Linear), {Position = target}):Play()
+	
+	task.delay(d, function()
+		-- Impact explosion - size based on rarity
+		local boomSize = 3.5 * config.projectileSize
+		boom(target, color, boomSize, 0.25 * config.trailLength)
+		
+		-- Extra impact effects for higher rarities
+		if config.projectileSize >= 1.5 then
+			ring(target, secondary, boomSize * 2, 0.4 * config.trailLength)
+		end
+		if config.projectileSize >= 2.2 then
+			-- Mythic: multiple rings
+			for i = 1, 3 do
+				task.delay(i * 0.1, function()
+					ring(target, color, boomSize * (3 - i), 0.3)
+				end)
+			end
+		end
+		
+		p:Destroy()
+	end)
+end
 
 SA["Basic Shot"] = function(s,t,sp)
 	local p = mkP(s,0.8,sp.Effect.Color)
@@ -883,10 +1196,39 @@ SpellCast.OnClientEvent:Connect(function(caster, spellName, target)
 	if fn then
 		fn(startPos, target, spell)
 	else
-		local p = mkP(startPos, 1.5, spell.Effect and spell.Effect.Color or Color3.new(1,1,1))
-		fly(p, target, spell.Speed or 90).Completed:Connect(function()
-			boom(target, spell.Effect and spell.Effect.Color or Color3.new(1,1,1), 8, 0.35)
-			p:Destroy()
-		end)
+		-- Use rarity-based weapon projectile for weapons
+		local tier = SpellsConfig.GetWeaponTier and SpellsConfig.GetWeaponTier(spellName)
+		if tier then
+			-- Use unique rarity effect
+			local rarityFn = RarityEffects[tier]
+			if rarityFn then
+				rarityFn(startPos, target, spell)
+			else
+				createWeaponProjectile(startPos, target, spell, spellName)
+			end
+		else
+			local p = mkP(startPos, 1.5, spell.Effect and spell.Effect.Color or Color3.new(1,1,1))
+			fly(p, target, spell.Speed or 90).Completed:Connect(function()
+				boom(target, spell.Effect and spell.Effect.Color or Color3.new(1,1,1), 8, 0.35)
+				p:Destroy()
+			end)
+		end
+	end
+end)
+
+-- Weapon projectile handler (from server)
+StaffFireProjectile.OnClientEvent:Connect(function(caster, weaponName, target)
+	local spell = SpellsConfig.GetSpell(weaponName)
+	local root = caster and caster.Character and caster.Character:FindFirstChild("HumanoidRootPart")
+	if not spell or not root then return end
+	local startPos = root.Position + V(0, 2, 0)
+	
+	-- Get weapon tier and use unique rarity effect
+	local tier = SpellsConfig.GetWeaponTier and SpellsConfig.GetWeaponTier(weaponName) or "Common"
+	local rarityFn = RarityEffects[tier]
+	if rarityFn then
+		rarityFn(startPos, target, spell)
+	else
+		createWeaponProjectile(startPos, target, spell, weaponName)
 	end
 end)

@@ -13,6 +13,54 @@ local AllocateStat = Remotes:WaitForChild("AllocateStat")
 local SpellsConfig = require(RS:WaitForChild("Config"):WaitForChild("SpellsConfig"))
 local data
 
+-- Icon texture IDs from Simulator Icon Pack
+local ICONS = {
+	-- Stats icons
+	Star = "rbxassetid://17368097932",
+	CoinIcon = "rbxassetid://17368060122",
+	RNG = "rbxassetid://17368109454",
+	Health = "rbxassetid://17368075795",
+	Power = "rbxassetid://17368210998",
+	Energy = "rbxassetid://17368078790",
+	Speed = "rbxassetid://17368052918",
+	Playtime = "rbxassetid://15937828418",
+	TripleStars = "rbxassetid://15403047368",
+	Kills = "rbxassetid://17368093079",
+	Strength = "rbxassetid://15403007921",
+	GemIcon = "rbxassetid://17368064384",
+	-- Menu/Action icons
+	Inventory = "rbxassetid://15402958715",
+	Accept = "rbxassetid://17368190066",
+	Deny = "rbxassetid://17368208554",
+	Question = "rbxassetid://15403140844",
+}
+
+-- Element icons (using element colors as visual indicators)
+local elementIcons = {
+	Fire = "🔥",
+	Ice = "❄️",
+	Poison = "☠️",
+	Arcane = "✨",
+	Lightning = "⚡",
+	Physical = "⚔️",
+	Void = "🌀",
+	Dark = "🌑",
+}
+
+-- Helper function to create ImageLabel icon
+local function createIcon(parent, textureId, size, position, color)
+	local img = Instance.new("ImageLabel")
+	img.Size = size or UDim2.new(0, 24, 0, 24)
+	img.Position = position or UDim2.new(0, 0, 0, 0)
+	img.BackgroundTransparency = 1
+	img.Image = textureId
+	if color then
+		img.ImageColor3 = color
+	end
+	img.Parent = parent
+	return img
+end
+
 local old = parent:FindFirstChild("InventoryGui")
 if old then old:Destroy() end
 local gui = Instance.new("ScreenGui")
@@ -43,11 +91,13 @@ local panelStroke = Instance.new("UIStroke",panel)
 panelStroke.Color = Color3.fromRGB(80,85,110)
 panelStroke.Thickness = 2
 
+-- Title with icon
+local titleIcon = createIcon(panel, ICONS.Inventory, UDim2.new(0, 28, 0, 28), UDim2.new(0, 14, 0, 14))
 local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1,-60,0,40)
-title.Position = UDim2.new(0,16,0,8)
+title.Size = UDim2.new(1,-90,0,40)
+title.Position = UDim2.new(0,46,0,8)
 title.BackgroundTransparency = 1
-title.Text = "📦 Inventory"
+title.Text = "Inventory"
 title.TextColor3 = Color3.new(1,1,1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 22
@@ -55,15 +105,13 @@ title.TextXAlignment = Enum.TextXAlignment.Left
 title.Parent = panel
 
 local close = Instance.new("TextButton")
-close.Text = "✕"
+close.Text = ""
 close.Size = UDim2.new(0,34,0,34)
 close.Position = UDim2.new(1,-44,0,8)
 close.BackgroundColor3 = Color3.fromRGB(100,30,30)
-close.TextColor3 = Color3.new(1,1,1)
-close.Font = Enum.Font.GothamBold
-close.TextSize = 18
 close.Parent = panel
 Instance.new("UICorner",close).CornerRadius = UDim.new(0,6)
+local closeIcon = createIcon(close, ICONS.Deny, UDim2.new(0, 20, 0, 20), UDim2.new(0.5, -10, 0.5, -10))
 close.MouseButton1Click:Connect(function() gui.Enabled = false end)
 
 -- Player info header
@@ -81,7 +129,9 @@ headerLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 headerLayout.Padding = UDim.new(0,20)
 headerLayout.Parent = headerFrame
 
-local function makeHeaderBadge(icon, text, color)
+
+
+local function makeHeaderBadge(iconTexture, text, color)
 	local badge = Instance.new("Frame")
 	badge.Size = UDim2.new(0,120,0,30)
 	badge.BackgroundColor3 = Color3.fromRGB(30,32,45)
@@ -91,19 +141,16 @@ local function makeHeaderBadge(icon, text, color)
 	stroke.Color = color
 	stroke.Thickness = 1
 
-	local ic = Instance.new("TextLabel")
-	ic.Size = UDim2.new(0,30,1,0)
-	ic.Position = UDim2.new(0,4,0,0)
+	local ic = Instance.new("ImageLabel")
+	ic.Size = UDim2.new(0,24,0,24)
+	ic.Position = UDim2.new(0,4,0.5,-12)
 	ic.BackgroundTransparency = 1
-	ic.Text = icon
-	ic.TextSize = 16
-	ic.Font = Enum.Font.GothamBold
-	ic.TextColor3 = color
+	ic.Image = iconTexture
 	ic.Parent = badge
 
 	local tx = Instance.new("TextLabel")
-	tx.Size = UDim2.new(1,-36,1,0)
-	tx.Position = UDim2.new(0,32,0,0)
+	tx.Size = UDim2.new(1,-32,1,0)
+	tx.Position = UDim2.new(0,30,0,0)
 	tx.BackgroundTransparency = 1
 	tx.Text = text
 	tx.TextColor3 = Color3.new(1,1,1)
@@ -116,9 +163,9 @@ local function makeHeaderBadge(icon, text, color)
 	return badge
 end
 
-local levelBadge = makeHeaderBadge("⭐", "Lv.1", Color3.fromRGB(255,200,50))
-local goldBadge = makeHeaderBadge("💰", "0", Color3.fromRGB(255,215,0))
-local spinsBadge = makeHeaderBadge("🎰", "5", Color3.fromRGB(180,130,30))
+local levelBadge = makeHeaderBadge(ICONS.Star, "Lv.1", Color3.fromRGB(255,200,50))
+local goldBadge = makeHeaderBadge(ICONS.CoinIcon, "0", Color3.fromRGB(255,215,0))
+local spinsBadge = makeHeaderBadge(ICONS.RNG, "5", Color3.fromRGB(180,130,30))
 
 local pages, buttons = {}, {}
 local function switchTab(name)
@@ -126,22 +173,36 @@ local function switchTab(name)
 		page.Visible = n == name
 		buttons[n].BackgroundColor3 = n == name and Color3.fromRGB(60,75,120) or Color3.fromRGB(35,40,55)
 	end
-	local tabNames = {Spells="📖 Spells",Weapons="⚔️ Weapons",Gacha="🎰 Gacha",Stats="📊 Stats"}
+	local tabNames = {Spells="Spells",Weapons="Weapons",Gacha="Gacha",Stats="Stats"}
 	title.Text = tabNames[name] or name
 end
 
-local tabIcons = {Spells="📖",Weapons="⚔️",Gacha="🎰",Stats="📊"}
+local tabIconTextures = {
+	Spells = ICONS.GemIcon,
+	Weapons = ICONS.Kills,
+	Gacha = ICONS.RNG,
+	Stats = ICONS.TripleStars
+}
 for i, name in ipairs({"Spells","Weapons","Gacha","Stats"}) do
 	local b = Instance.new("TextButton")
-	b.Text = tabIcons[name].." "..name
+	b.Text = ""
 	b.Size = UDim2.new(0,110,0,36)
 	b.Position = UDim2.new(0,14+(i-1)*118,0,108)
 	b.BackgroundColor3 = i==1 and Color3.fromRGB(60,75,120) or Color3.fromRGB(35,40,55)
-	b.TextColor3 = Color3.new(1,1,1)
-	b.Font = Enum.Font.GothamBold
-	b.TextSize = 13
 	b.Parent = panel
 	Instance.new("UICorner",b).CornerRadius = UDim.new(0,6)
+	-- Tab icon
+	local tabIcon = createIcon(b, tabIconTextures[name], UDim2.new(0, 20, 0, 20), UDim2.new(0, 8, 0.5, -10))
+	-- Tab label
+	local tabLabel = Instance.new("TextLabel")
+	tabLabel.Size = UDim2.new(1, -32, 1, 0)
+	tabLabel.Position = UDim2.new(0, 30, 0, 0)
+	tabLabel.BackgroundTransparency = 1
+	tabLabel.Text = name
+	tabLabel.TextColor3 = Color3.new(1,1,1)
+	tabLabel.Font = Enum.Font.GothamBold
+	tabLabel.TextSize = 13
+	tabLabel.Parent = b
 	buttons[name] = b
 	local p = Instance.new("Frame")
 	p.Size = UDim2.new(1,-28,1,-155)
@@ -203,16 +264,24 @@ gachaInfo.Parent = leftArea
 local spin = Instance.new("TextButton")
 spin.Size = UDim2.new(0,220,0,54)
 spin.Position = UDim2.new(0.5,-110,0,90)
-spin.Text = "🎰 SPIN GACHA 🎰"
+spin.Text = ""
 spin.BackgroundColor3 = Color3.fromRGB(180,120,20)
-spin.TextColor3 = Color3.new(1,1,1)
-spin.Font = Enum.Font.GothamBold
-spin.TextSize = 18
 spin.Parent = leftArea
 Instance.new("UICorner",spin).CornerRadius = UDim.new(0,10)
 local spinStroke = Instance.new("UIStroke",spin)
 spinStroke.Color = Color3.fromRGB(255,200,50)
 spinStroke.Thickness = 2
+-- Spin button icon and label
+local spinIcon = createIcon(spin, ICONS.RNG, UDim2.new(0, 28, 0, 28), UDim2.new(0.5, -80, 0.5, -14))
+local spinLabel = Instance.new("TextLabel")
+spinLabel.Size = UDim2.new(1, -40, 1, 0)
+spinLabel.Position = UDim2.new(0, 40, 0, 0)
+spinLabel.BackgroundTransparency = 1
+spinLabel.Text = "SPIN GACHA"
+spinLabel.TextColor3 = Color3.new(1,1,1)
+spinLabel.Font = Enum.Font.GothamBold
+spinLabel.TextSize = 18
+spinLabel.Parent = spin
 
 local result = Instance.new("TextLabel")
 result.Size = UDim2.new(1,0,0,40)
@@ -225,57 +294,90 @@ result.Parent = leftArea
 
 -- Rates Sidebar (Right Side)
 local gachaRates = Instance.new("ScrollingFrame")
-gachaRates.Size = UDim2.new(1,-345,1,0)
-gachaRates.Position = UDim2.new(0,345,0,0)
-gachaRates.BackgroundTransparency = 0.95
-gachaRates.BackgroundColor3 = Color3.fromRGB(0,0,0)
+gachaRates.Size = UDim2.new(1,-345,1,-20)
+gachaRates.Position = UDim2.new(0,345,0,10)
+gachaRates.BackgroundTransparency = 1
 gachaRates.BorderSizePixel = 0
 gachaRates.ScrollBarThickness = 4
+gachaRates.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 120)
 gachaRates.Parent = pages.Gacha
 
 local ratesLayout = Instance.new("UIListLayout")
-ratesLayout.Padding = UDim.new(0,8)
+ratesLayout.Padding = UDim.new(0,10)
 ratesLayout.Parent = gachaRates
 
 local function addRarityGroup(titleText, rateText, color, spells)
 	local frame = Instance.new("Frame")
-	frame.Size = UDim2.new(1,-12,0,94)
+	frame.Size = UDim2.new(1,-12,0,0) -- Dynamic height
 	frame.BackgroundColor3 = Color3.fromRGB(28,30,36)
 	frame.Parent = gachaRates
-	Instance.new("UICorner",frame).CornerRadius = UDim.new(0,6)
+	Instance.new("UICorner",frame).CornerRadius = UDim.new(0,8)
 	local stroke = Instance.new("UIStroke",frame)
 	stroke.Color = color
-	stroke.Thickness = 1
+	stroke.Thickness = 1.5
+	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 
-	local header = Instance.new("TextLabel")
-	header.Size = UDim2.new(1,-16,0,24)
-	header.Position = UDim2.new(0,8,0,4)
-	header.BackgroundTransparency = 1
-	header.Text = titleText .. " (" .. rateText .. ")"
-	header.TextColor3 = color
-	header.Font = Enum.Font.GothamBold
-	header.TextSize = 13
-	header.TextXAlignment = Enum.TextXAlignment.Left
+	local header = Instance.new("Frame")
+	header.Size = UDim2.new(1,0,0,30)
+	header.BackgroundColor3 = color
+	header.BackgroundTransparency = 0.8
 	header.Parent = frame
+	Instance.new("UICorner",header).CornerRadius = UDim.new(0,8)
+	
+	local titleLbl = Instance.new("TextLabel")
+	titleLbl.Size = UDim2.new(1,-16,1,0)
+	titleLbl.Position = UDim2.new(0,8,0,0)
+	titleLbl.BackgroundTransparency = 1
+	titleLbl.Text = titleText:upper()
+	titleLbl.TextColor3 = Color3.new(1,1,1)
+	titleLbl.Font = Enum.Font.GothamBold
+	titleLbl.TextSize = 14
+	titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+	titleLbl.Parent = header
+
+	local rateLbl = Instance.new("TextLabel")
+	rateLbl.Size = UDim2.new(1,-16,1,0)
+	rateLbl.Position = UDim2.new(0,8,0,0)
+	rateLbl.BackgroundTransparency = 1
+	rateLbl.Text = rateText
+	rateLbl.TextColor3 = Color3.new(1,1,1)
+	rateLbl.Font = Enum.Font.GothamBold
+	rateLbl.TextSize = 14
+	rateLbl.TextXAlignment = Enum.TextXAlignment.Right
+	rateLbl.Parent = header
+
+	local content = Instance.new("Frame")
+	content.Size = UDim2.new(1,0,0,0)
+	content.Position = UDim2.new(0,0,0,35)
+	content.BackgroundTransparency = 1
+	content.Parent = frame
+	
+	local contentPadding = Instance.new("UIPadding", content)
+	contentPadding.PaddingLeft = UDim.new(0, 10)
+	contentPadding.PaddingRight = UDim.new(0, 10)
+	contentPadding.PaddingTop = UDim.new(0, 5)
+	contentPadding.PaddingBottom = UDim.new(0, 10)
 
 	local listLbl = Instance.new("TextLabel")
-	listLbl.Size = UDim2.new(1,-16,1,-34)
-	listLbl.Position = UDim2.new(0,8,0,28)
+	listLbl.Size = UDim2.new(1,0,0,0)
+	listLbl.AutomaticSize = Enum.AutomaticSize.Y
 	listLbl.BackgroundTransparency = 1
-	listLbl.Text = table.concat(spells, ", ")
-	listLbl.TextColor3 = Color3.fromRGB(200,200,200)
-	listLbl.Font = Enum.Font.Gotham
-	listLbl.TextSize = 11
+	listLbl.Text = table.concat(spells, " • ")
+	listLbl.TextColor3 = Color3.fromRGB(220,220,220)
+	listLbl.Font = Enum.Font.GothamMedium
+	listLbl.TextSize = 12
 	listLbl.TextWrapped = true
 	listLbl.TextYAlignment = Enum.TextYAlignment.Top
 	listLbl.TextXAlignment = Enum.TextXAlignment.Left
-	listLbl.Parent = frame
+	listLbl.Parent = content
+
+	frame.AutomaticSize = Enum.AutomaticSize.Y
 end
 
-addRarityGroup("⚪ Common", "50%", Color3.fromRGB(160,160,160), {"Crimson Bolt", "Frost Fang", "Venom Strike", "Arcane Missile", "Spark Lance"})
-addRarityGroup("🔵 Rare", "30%", Color3.fromRGB(50,150,255), {"Inferno Cascade", "Glacial Nova", "Plague Cloud", "Rift Pulse", "Thunder Dome"})
-addRarityGroup("🟣 Epic", "15%", Color3.fromRGB(180,50,255), {"Phoenix Wrath", "Winter's Embrace", "Death Blossom", "Celestial Barrage", "Storm Judgement"})
-addRarityGroup("🟡 Legendary", "5%", Color3.fromRGB(255,160,0), {"Apocalypse Flare", "Eternal Frost", "Void Annihilation"})
+addRarityGroup("Common", "50%", Color3.fromRGB(160,160,160), {"Crimson Bolt", "Frost Fang", "Venom Strike", "Arcane Missile", "Spark Lance"})
+addRarityGroup("Rare", "30%", Color3.fromRGB(50,150,255), {"Inferno Cascade", "Glacial Nova", "Plague Cloud", "Rift Pulse", "Thunder Dome"})
+addRarityGroup("Epic", "15%", Color3.fromRGB(180,50,255), {"Phoenix Wrath", "Winter's Embrace", "Death Blossom", "Celestial Barrage", "Storm Judgement"})
+addRarityGroup("Legendary", "5%", Color3.fromRGB(255,160,0), {"Apocalypse Flare", "Eternal Frost", "Void Annihilation"})
 gachaRates.CanvasSize = UDim2.new(0,0,0,420)
 
 -- ══════ TAB: STATS ══════
@@ -300,7 +402,7 @@ local statsLayout = Instance.new("UIListLayout")
 statsLayout.Padding = UDim.new(0,8)
 statsLayout.Parent = statsList
 
-local function makeStatRow(name, desc, icon)
+local function makeStatRow(name, desc, iconTexture)
 	local row = Instance.new("Frame")
 	row.Name = name
 	row.Size = UDim2.new(1,0,0,55)
@@ -311,15 +413,7 @@ local function makeStatRow(name, desc, icon)
 	stroke.Color = Color3.fromRGB(50,55,75)
 	stroke.Thickness = 1
 
-	local iconLbl = Instance.new("TextLabel")
-	iconLbl.Size = UDim2.new(0,36,0,36)
-	iconLbl.Position = UDim2.new(0,10,0.5,-18)
-	iconLbl.BackgroundTransparency = 1
-	iconLbl.Text = icon or "●"
-	iconLbl.TextSize = 20
-	iconLbl.Font = Enum.Font.GothamBold
-	iconLbl.TextColor3 = Color3.fromRGB(100,200,255)
-	iconLbl.Parent = row
+	local iconLbl = createIcon(row, iconTexture or ICONS.Question, UDim2.new(0, 32, 0, 32), UDim2.new(0, 10, 0.5, -16), Color3.fromRGB(100,200,255))
 
 	local lblName = Instance.new("TextLabel")
 	lblName.Size = UDim2.new(1,-200,1,0)
@@ -358,11 +452,11 @@ local function makeStatRow(name, desc, icon)
 	btn.MouseButton1Click:Connect(function() AllocateStat:FireServer(name) end)
 end
 
-makeStatRow("Health", "+20 Max HP", "❤️")
-makeStatRow("Magic", "+4 Spell DMG, +10 Max Mana", "🔮")
-makeStatRow("Mana", "+15 Max Mana, +0.3 Regen", "💧")
-makeStatRow("Speed", "+1.5 Walk Speed", "⚡")
-makeStatRow("Cooldown", "-3% Spell Cooldown", "⏱️")
+makeStatRow("Health", "+20 Max HP", ICONS.Health)
+makeStatRow("Magic", "+4 Spell DMG, +10 Max Mana", ICONS.Power)
+makeStatRow("Mana", "+15 Max Mana, +0.3 Regen", ICONS.Energy)
+makeStatRow("Speed", "+1.5 Walk Speed", ICONS.Speed)
+makeStatRow("Cooldown", "-3% Spell Cooldown", ICONS.Playtime)
 
 -- ══════ ROLLING ANIMATION LOGIC ══════
 local allSpells = {}
@@ -379,7 +473,14 @@ local tierColors = {
 	Rare = Color3.fromRGB(180,50,255),
 	Epic = Color3.fromRGB(255,160,0)
 }
-local elementIcons = {Fire = "🔥", Ice = "❄️", Poison = "☠️", Arcane = "🔮", Lightning = "⚡"}
+-- Element colors for visual reference (no emojis)
+local elementColors = {
+	Fire = Color3.fromRGB(255,100,20),
+	Ice = Color3.fromRGB(100,200,255),
+	Poison = Color3.fromRGB(80,200,40),
+	Arcane = Color3.fromRGB(160,50,255),
+	Lightning = Color3.fromRGB(255,255,80)
+}
 
 local function playSpinAnimation(rolledSpellName, isNew, fullMsg)
 	spin.Active = false
@@ -837,7 +938,7 @@ Gacha.OnClientEvent:Connect(function(success, isNew, spellName, msg)
 end)
 
 spin.MouseButton1Click:Connect(function()
-	if spin.Text == "🎰 SPIN GACHA 🎰" then
+	if spin.Text == "🎰 SPIN GACHA 🎰" or spin.Text == "SPIN GACHA" or spin.Text == "" then
 		Gacha:FireServer()
 	end
 end)

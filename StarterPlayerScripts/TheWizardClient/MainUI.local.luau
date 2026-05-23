@@ -8,6 +8,7 @@ local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
+local UIS = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
 local guiParent = player:WaitForChild("PlayerGui")
