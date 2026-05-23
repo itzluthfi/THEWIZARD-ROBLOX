@@ -2,6 +2,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Remotes = ReplicatedStorage:WaitForChild("RemoteEvents")
 local SpellCast = Remotes:WaitForChild("SpellCast")
 local SlotCooldown = Remotes:WaitForChild("SlotCooldown")
+local StaffFireProjectile = Remotes:WaitForChild("StaffFireProjectile")
 local SpellsConfig = require(ReplicatedStorage:WaitForChild("Config"):WaitForChild("SpellsConfig"))
 local DataManager = require(ReplicatedStorage:WaitForChild("DataManagerModule"))
 
@@ -44,18 +45,18 @@ local function damage(player, model, amount)
 				text.Parent = billboard
 
 				local ts = game:GetService("TweenService")
-				local moveTween = ts:Create(billboard, TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-					StudsOffset = billboard.StudsOffset + Vector3.new(0, 3, 0)
+				local moveTween = ts:Create(billboard, TweenInfo.new(1.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+					StudsOffset = billboard.StudsOffset + Vector3.new(0, 4, 0)
 				})
-				local fadeTween = ts:Create(text, TweenInfo.new(0.8, Enum.EasingStyle.OutQuad), {
+				local fadeTween = ts:Create(text, TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), {
 					TextTransparency = 1,
 					TextStrokeTransparency = 1
 				})
 				moveTween:Play()
 				fadeTween:Play()
-				task.delay(0.8, function()
-					billboard:Destroy()
-				end)
+				
+				-- Ensure destruction with Debris Service as fallback
+				game:GetService("Debris"):AddItem(billboard, 1.4)
 			end)
 		end
 	end
@@ -70,6 +71,7 @@ function SpellService.Handle(player, spellName, target)
 	if not root then return end
 	local stats = data.Stats or {}
 	local amount = (spell.Damage or 0) + ((stats.Magic or 0) * 4)
+
 	if spell.Type == "Projectile" then
 		local dir = target - root.Position
 		if dir.Magnitude > 0 then
@@ -89,21 +91,31 @@ function SpellService.Handle(player, spellName, target)
 			end
 		end
 	end
+
+	-- Fire visual effects to ALL clients so they can render the spell animation
+	SpellCast:FireAllClients(player, spellName, target)
 end
 
 SpellCast.OnServerEvent:Connect(SpellService.Handle)
 
 -- Forward slot cooldown events to all clients so MainUI can render the overlay
-SlotCooldown.OnServerEvent:Connect(function(player, slot, duration)
-	SlotCooldown:FireAllClients(slot, duration)
+-- For spells: slot is spell index (1-4 for Z,X,C,V), isSpell = true
+-- For items/weapons: slot is item slot (1-4), isSpell = false
+SlotCooldown.OnServerEvent:Connect(function(player, slot, duration, isSpell)
+	SlotCooldown:FireAllClients(slot, duration, isSpell)
 end)
 
 -- Handle staff / weapon projectile attacks fired from the client
+-- This handles BASIC ATTACK with weapon - NO weapon check needed
 StaffFireProjectile.OnServerEvent:Connect(function(player, wpnName, targetPos)
 	local data = DataManager.Get(player)
 	if not data then return end
-	if not data.EquippedSpells or data.EquippedSpells[4] ~= wpnName then return end
-	local sp = SpellsConfig.GetSpell(wpnName)
+
+	-- Get the weapon from slot 4 OR default to "Basic Shot" if none equipped
+	local equippedWeapon = data.EquippedSpells and data.EquippedSpells[4]
+	local weaponToUse = equippedWeapon or "Basic Shot"
+
+	local sp = SpellsConfig.GetSpell(weaponToUse)
 	if not sp then return end
 
 	local char = player.Character
@@ -111,25 +123,75 @@ StaffFireProjectile.OnServerEvent:Connect(function(player, wpnName, targetPos)
 	local root = char:FindFirstChild("HumanoidRootPart")
 	if not root then return end
 
-	local amount = (sp.Damage or 35) + ((data.Stats.Magic or 0) * 4)
+	local stats = data.Stats or {}
+	local amount = (sp.Damage or 15) + ((stats.Magic or 0) * 4)
 
-	-- Raycast towards target to find a monster
-	local dir = targetPos - root.Position
-	if dir.Magnitude > 0 then
-		local params = RaycastParams.new()
-		params.FilterDescendantsInstances = {char}
-		params.FilterType = Enum.RaycastFilterType.Exclude
-		local rayHit = workspace:Raycast(root.Position, dir.Unit * (sp.Range or 65), params)
-		if rayHit then
-			local hitModel = rayHit.Instance:FindFirstAncestorOfClass("Model")
-			if hitModel and hitModel:GetAttribute("IsMonster") then
-				damage(player, hitModel, amount)
+	-- If target is invalid (0,0,0 or too close), find nearest monster
+	local actualTarget = targetPos
+	if targetPos and (targetPos.X == 0 and targetPos.Y == 0 and targetPos.Z == 0) then
+		actualTarget = nil
+	end
+
+	-- If no valid target, find nearest monster
+	if not actualTarget then
+		local nearestDist = 80
+		for _, model in ipairs(workspace:GetDescendants()) do
+			if model:IsA("Model") and model:GetAttribute("IsMonster") then
+				local hrp = model:FindFirstChild("HumanoidRootPart")
+				if hrp and hrp.Parent then
+					local hum = model:FindFirstChildOfClass("Humanoid")
+					if hum and hum.Health > 0 then
+						local dist = (hrp.Position - root.Position).Magnitude
+						if dist < nearestDist then
+							nearestDist = dist
+							actualTarget = hrp.Position
+						end
+					end
+				end
 			end
 		end
 	end
 
-	-- Tell all clients to show the projectile & impact VFX
-	StaffFireProjectile:FireAllClients(wpnName, root.Position, targetPos)
+	-- Raycast towards target to find a monster
+	if actualTarget then
+		local dir = actualTarget - root.Position
+		if dir.Magnitude > 0 then
+			local params = RaycastParams.new()
+			params.FilterDescendantsInstances = {char}
+			params.FilterType = Enum.RaycastFilterType.Exclude
+			local rayHit = workspace:Raycast(root.Position, dir.Unit * (sp.Range or 65), params)
+			if rayHit then
+				local hitModel = rayHit.Instance:FindFirstAncestorOfClass("Model")
+				if hitModel and hitModel:GetAttribute("IsMonster") then
+					damage(player, hitModel, amount)
+				end
+			end
+		end
+	end
+
+	-- Fire visual effects to ALL clients (projectile animation)
+	SpellCast:FireAllClients(player, weaponToUse, actualTarget or root.Position + root.CFrame.LookVector * 50)
+
+	-- Also fire LockTarget to show target indicator
+	local lockRemote = Remotes:FindFirstChild("LockTarget")
+	-- If actualTarget is nil and we just computed it, re-find the target model for lock
+	local foundTargetModel = nil
+	if actualTarget then
+		-- Find the target model at the position
+		for _, model in ipairs(workspace:GetDescendants()) do
+			if model:IsA("Model") and model:GetAttribute("IsMonster") then
+				local hrp = model:FindFirstChild("HumanoidRootPart")
+				if hrp and (hrp.Position - actualTarget).Magnitude < 5 then
+					foundTargetModel = model
+					break
+				end
+			end
+		end
+	end
+
+	if foundTargetModel then
+		lockRemote:FireAllClients(foundTargetModel)
+	end
 end)
 
 return SpellService

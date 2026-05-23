@@ -97,16 +97,76 @@ SpellsConfig.SPELLS = {
 	},
 }
 -- Weapon Projectiles (these go in EquippedSpells[4])
+SpellsConfig.SPELLS["Stick"] = {
+	Element="Physical", Type="Projectile", Tier="Basic",
+	Damage=15, ManaCost=0, Cooldown=1.0, Range=50, Speed=100,
+	Effect={Color=Color3.fromRGB(139,90,43), Secondary=Color3.fromRGB(210,180,140), Element="Physical"},
+}
+SpellsConfig.SPELLS["StaffOfSparks"] = {
+	Element="Lightning", Type="Projectile", Tier="Rare",
+	Damage=40, ManaCost=0, Cooldown=0.7, Range=70, Speed=130,
+	Effect={Color=Color3.fromRGB(255,255,80), Secondary=Color3.fromRGB(255,220,50), Element="Lightning"},
+}
+SpellsConfig.SPELLS["MasterStaff"] = {
+	Element="Arcane", Type="Projectile", Tier="Epic",
+	Damage=55, ManaCost=0, Cooldown=0.6, Range=80, Speed=120,
+	Effect={Color=Color3.fromRGB(180,80,255), Secondary=Color3.fromRGB(220,150,255), Element="Arcane"},
+}
+SpellsConfig.SPELLS["StaffOmega"] = {
+	Element="Void", Type="Projectile", Tier="Legendary",
+	Damage=75, ManaCost=0, Cooldown=0.5, Range=90, Speed=140,
+	Effect={Color=Color3.fromRGB(60,0,120), Secondary=Color3.fromRGB(150,50,255), Element="Void"},
+}
+SpellsConfig.SPELLS["KorbloxStaff"] = {
+	Element="Dark", Type="Projectile", Tier="Epic",
+	Damage=60, ManaCost=0, Cooldown=0.55, Range=85, Speed=125,
+	Effect={Color=Color3.fromRGB(128,0,128), Secondary=Color3.fromRGB(200,100,200), Element="Dark"},
+}
+SpellsConfig.SPELLS["AstralWand"] = {
+	Element="Arcane", Type="Projectile", Tier="Rare",
+	Damage=38, ManaCost=0, Cooldown=0.8, Range=75, Speed=130,
+	Effect={Color=Color3.fromRGB(140,200,255), Secondary=Color3.fromRGB(220,240,255), Element="Arcane"},
+}
+-- Legacy fallback
 SpellsConfig.SPELLS["AzUkr_wpn"] = {
+	Element="Ice", Type="Projectile", Tier="Basic",
+	Damage=35, ManaCost=0, Cooldown=0.8, Range=65, Speed=110,
+	Effect={Color=Color3.fromRGB(100,200,255), Secondary=Color3.fromRGB(220,255,255), Element="Ice"},
+}
+SpellsConfig.SPELLS["AzureIceStaff"] = {
 	Element="Ice", Type="Projectile", Tier="Basic",
 	Damage=35, ManaCost=0, Cooldown=0.8, Range=65, Speed=110,
 	Effect={Color=Color3.fromRGB(100,200,255), Secondary=Color3.fromRGB(220,255,255), Element="Ice"},
 }
 
 function SpellsConfig.GetSpell(name)
-	-- Map "Wpn:AzureIceStaff" to its internal key, and "AzureIceStaff" as well
-	local key = name == "AzureIceStaff" and "AzUkr_wpn" or name
-	if SpellsConfig.SPELLS[key] then return SpellsConfig.SPELLS[key] end
-	return SpellsConfig.SPELLS[name]
+	-- Direct lookup first
+	if SpellsConfig.SPELLS[name] then return SpellsConfig.SPELLS[name] end
+
+	-- Map legacy names
+	local legacyMap = {
+		["AzureIceStaff"] = "Stick",
+		["AzUkr_wpn"] = "Stick",
+	}
+	if legacyMap[name] and SpellsConfig.SPELLS[legacyMap[name]] then
+		return SpellsConfig.SPELLS[legacyMap[name]]
+	end
+
+	return nil
 end
+
+-- Get weapon tier by name
+function SpellsConfig.GetWeaponTier(name)
+	local tiers = {
+		Stick = "Common",
+		StaffOfSparks = "Rare",
+		AstralWand = "Rare",      -- NEW rare wand
+		MasterStaff = "Epic",
+		StaffOmega = "Legendary",
+		KorbloxStaff = "Epic",
+		AzureIceStaff = "Common",
+	}
+	return tiers[name] or "Common"
+end
+
 return SpellsConfig

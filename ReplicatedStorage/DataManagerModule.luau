@@ -2,7 +2,7 @@ local DataStoreService = game:GetService("DataStoreService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Store = DataStoreService:GetDataStore("TheWizard_PlayerData_v5")
+local Store = DataStoreService:GetDataStore("TheWizard_PlayerData_v6")  -- NEW VERSION for fresh data
 local Remotes = ReplicatedStorage:WaitForChild("RemoteEvents")
 local UpdateData = Remotes:WaitForChild("UpdateData")
 local SyncData = Remotes:WaitForChild("SyncData")
@@ -11,12 +11,14 @@ local GetData = Remotes.Functions:WaitForChild("GetPlayerData")
 local DataManager = {}
 local session = {}
 
+-- DEFAULT DATA for NEW players
+-- NOTE: Basic Shot is NOT a spell - it's the weapon's basic attack
+-- Weapon is in EquippedSpells[4], NOT SpellBar
 local DEFAULT = {
-	DataVersion = 5,
+	DataVersion = 6,
 	Level = 1, XP = 0, XPToNext = 100,
 	Gold = 100, Mana = 100, MaxMana = 100,
-	Inventory = {}, UnlockedSpells = {}, EquippedSpells = {},
-	UnlockedWeapons = {},
+	Inventory = {}, UnlockedSpells = {}, EquippedSpells = {}, SpellBar = {}, UnlockedWeapons = {},
 	ActiveQuests = {}, FreeSpins = 5, StatPoints = 0,
 	Stats = {Health = 0, Magic = 0, Mana = 0, Speed = 0, Cooldown = 0},
 }
@@ -29,19 +31,28 @@ local function copy(v)
 end
 
 local function normalize(data)
+	-- FORCE RESET for ALL players - this is the NEW version (v6)
+	-- Old data (v5 or any other version) is discarded
 	if type(data) ~= "table" or data.DataVersion ~= DEFAULT.DataVersion then
+		print("[DataManager] Fresh data created for player (version: " .. DEFAULT.DataVersion .. ")")
 		data = copy(DEFAULT)
 	end
 	for k, v in pairs(DEFAULT) do
 		if data[k] == nil then data[k] = copy(v) end
 	end
+	-- Ensure arrays exist
 	data.UnlockedSpells = data.UnlockedSpells or {}
 	data.EquippedSpells = data.EquippedSpells or {}
+	data.SpellBar = data.SpellBar or {}
 	data.UnlockedWeapons = data.UnlockedWeapons or {}
 	data.Inventory = data.Inventory or {}
 	data.Stats = data.Stats or copy(DEFAULT.Stats)
 	for k, v in pairs(DEFAULT.Stats) do
 		if data.Stats[k] == nil then data.Stats[k] = v end
+	end
+	-- Set default weapon in slot 4 (THIS IS BASIC SHOT, NOT A SPELL)
+	if not data.EquippedSpells[4] then
+		data.EquippedSpells[4] = "Basic Shot"
 	end
 	data.MaxMana = 100 + ((data.Stats.Magic or 0) * 10) + ((data.Stats.Mana or 0) * 15)
 	data.Mana = math.clamp(data.Mana or data.MaxMana, 0, data.MaxMana)

@@ -18,19 +18,101 @@ local C = function(r,g,b) return Color3.fromRGB(r,g,b) end
 data = GetData:InvokeServer()  -- fetch initial data immediately
 SyncData.OnClientEvent:Connect(function(d) data = d end)
 
+-- ══════ AUTO-TARGETING: Find nearest monster ══════
+local function findNearestMonster(maxRange)
+	local char = player.Character
+	if not char then return nil end
+	local root = char:FindFirstChild("HumanoidRootPart")
+	if not root then return nil end
+
+	local nearestDist = maxRange or 80
+	local nearestMonster = nil
+
+	for _, model in ipairs(workspace:GetDescendants()) do
+		if model:IsA("Model") and model:GetAttribute("IsMonster") then
+			local hrp = model:FindFirstChild("HumanoidRootPart")
+			if hrp and hrp.Parent then
+				local hum = model:FindFirstChildOfClass("Humanoid")
+				if hum and hum.Health > 0 then
+					local dist = (hrp.Position - root.Position).Magnitude
+					if dist < nearestDist then
+						nearestDist = dist
+						nearestMonster = hrp
+					end
+				end
+			end
+		end
+	end
+
+	return nearestMonster
+end
+
+local function getTargetPosition(allowNearestFallback)
+	-- 1. Priority: Locked target from MainUI (camera-center tracking)
+	local gui = player.PlayerGui and player.PlayerGui:FindFirstChild("TheWizardUI")
+	local lockedVal = gui and gui:FindFirstChild("LockedTargetValue")
+	local lockedModel = lockedVal and lockedVal.Value
+	if lockedModel and lockedModel.Parent then
+		local hrp = lockedModel:FindFirstChild("HumanoidRootPart")
+		if hrp then
+			return hrp.Position
+		end
+	end
+	if allowNearestFallback == false then
+		local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+		if root then return root.Position + root.CFrame.LookVector * 50 end
+		return Vector3.new(0, 0, 0)
+	end
+
+	-- 2. Check if mouse is hovering over a monster
+	local mouseTarget = mouse.Target
+	if mouseTarget then
+		local hitModel = mouseTarget:FindFirstAncestorOfClass("Model")
+		if hitModel and hitModel:GetAttribute("IsMonster") then
+			local hrp = hitModel:FindFirstChild("HumanoidRootPart")
+			if hrp then return hrp.Position end
+		end
+	end
+	
+	-- If not hovering monster, and no auto-lock, return mouse hit or camera forward
+	if mouse.Hit then
+		return mouse.Hit.Position
+	end
+
+	-- 3. Fallback: find nearest monster
+	local nearest = findNearestMonster(80)
+	if nearest then return nearest.Position end
+
+	-- 4. Last resort: look direction (Camera prioritized over character root)
+	local camera = workspace.CurrentCamera
+	if camera then
+		return camera.CFrame.Position + camera.CFrame.LookVector * 100
+	end
+
+	local char = player.Character
+	if char then
+		local root = char:FindFirstChild("HumanoidRootPart")
+		if root then
+			return root.Position + root.CFrame.LookVector * 50
+		end
+	end
+
+	return Vector3.new(0, 0, 0)
+end
+
 -- Listen for UI-triggered casts (clicking spell slots in MainUI)
 -- Uses BindableEvent for client-to-client communication
 local CastSpellBindable = Remotes:FindFirstChild("CastSpellBindable")
 if CastSpellBindable and CastSpellBindable:IsA("BindableEvent") then
 	CastSpellBindable.Event:Connect(function(slot)
-		cast(slot)
+		castSpellBar(slot)  -- Use SpellBar system (Z, X, C, V)
 	end)
 else
 	-- Fallback: listen for legacy CastSpell RemoteEvent
 	local CastSpell = Remotes:WaitForChild("CastSpell", 3)
 	if CastSpell then
 		CastSpell.OnClientEvent:Connect(function(slot)
-			if type(slot) == "number" then cast(slot) end
+			if type(slot) == "number" then castSpellBar(slot) end
 		end)
 	end
 end
@@ -92,7 +174,40 @@ local function cast(slot)
 	local dur = (sp.Cooldown or 1) * cdScale()
 	cooldowns[sn] = os.clock() + dur
 	SlotCooldown:FireServer(slot, dur)
-	SpellCast:FireServer(sn, mouse.Hit.Position)
+	SpellCast:FireServer(sn, getTargetPosition())  -- Use smart targeting
+end
+
+-- Spell bar casting (uses SpellBar array instead of EquippedSpells)
+local function castSpellBar(index)
+	local spellName = data and data.SpellBar and data.SpellBar[index]
+	if not spellName or spellName == "" then
+		showAlert("Slot " .. tostring(index) .. " Belum Ada Spell Ter-Equip! 🔮", Color3.fromRGB(255, 100, 100))
+		return
+	end
+
+	if cooldowns[spellName] and cooldowns[spellName] > os.clock() then
+		print("[SpellCaster] Spell " .. spellName .. " is on cooldown")
+		return
+	end
+
+	local sp = SpellsConfig.GetSpell(spellName)
+	if not sp then
+		print("[SpellCaster] Spell " .. spellName .. " not found in SpellsConfig!")
+		return
+	end
+
+	local cost = sp.ManaCost or 0
+	local currentMana = data and data.Mana or 0
+	if currentMana < cost then
+		showAlert("Mana Tidak Cukup! ❌", Color3.fromRGB(255, 60, 60))
+		return
+	end
+
+	local dur = (sp.Cooldown or 1) * cdScale()
+	cooldowns[spellName] = os.clock() + dur
+	SlotCooldown:FireServer(index, dur, true)  -- isSpell = true
+	SpellCast:FireServer(spellName, getTargetPosition())
+	print("[SpellCaster] Cast spell: " .. spellName .. " to " .. tostring(getTargetPosition()))
 end
 
 -- ══════ MOVEMENT: DOUBLE JUMP & DASH ══════
@@ -168,44 +283,80 @@ local function performDash()
 	end)
 end
 
+-- ══════ HELPER ══════
 -- Key & Click Bindings
 UIS.InputBegan:Connect(function(input, gpe)
 	if gpe then return end
 
-	-- LMB Basic Attack OR weapon attack if weapon is equipped
+	-- LMB Basic Attack - ALWAYS WORKS, no weapon required
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		local target = getTargetPosition()  -- Use smart targeting with auto-lock
+
+		-- First check if weapon equipped in slot 4
 		local wpn = data and data.EquippedSpells and data.EquippedSpells[4]
-		if wpn then
-			-- Weapon attack — fire StaffFireProjectile
+		if wpn and SpellsConfig.GetSpell(wpn) then
+			-- Use weapon attack
 			if cooldowns["WpnAttack"] and cooldowns["WpnAttack"] > os.clock() then return end
 			local sp = SpellsConfig.GetSpell(wpn)
-			if not sp then return end
 			cooldowns["WpnAttack"] = os.clock() + (sp.Cooldown or 0.8)
-			StaffFireProjectile:FireServer(wpn, mouse.Hit.Position)
+			StaffFireProjectile:FireServer(wpn, target)
+			print("[SpellCaster] Weapon attack: " .. wpn)
 			return
 		end
-		-- Default Basic Shot spell attack
+
+		-- DEFAULT: Basic Shot (always available, no weapon needed)
 		if cooldowns["Basic Shot"] and cooldowns["Basic Shot"] > os.clock() then return end
 		local sp = SpellsConfig.GetSpell("Basic Shot")
-		if not sp then return end
-		cooldowns["Basic Shot"] = os.clock() + 0.6
-		SpellCast:FireServer("Basic Shot", mouse.Hit.Position)
+		if sp then
+			cooldowns["Basic Shot"] = os.clock() + 0.6
+			SpellCast:FireServer("Basic Shot", target)
+			print("[SpellCaster] Basic Shot attack")
+		end
 		return
 	end
 
-	if input.KeyCode == Enum.KeyCode.One then cast(1)
-	elseif input.KeyCode == Enum.KeyCode.Two then cast(2)
-	elseif input.KeyCode == Enum.KeyCode.Three then cast(3)
-	elseif input.KeyCode == Enum.KeyCode.Four then 
-		-- Slot 4 weapon attack
+	-- ═══ ITEM SLOTS (keys 1-4) ═══
+	-- Key 1 = Item Slot 1 (generic item)
+	if input.KeyCode == Enum.KeyCode.One then
+		local item = data and data.EquippedSpells and data.EquippedSpells[1]
+		if item then
+			-- Items use different logic - for now just show equipped status
+			print("[SpellCaster] Item slot 1: " .. tostring(item))
+		end
+
+	-- Key 2 = Item Slot 2 (generic item)
+	elseif input.KeyCode == Enum.KeyCode.Two then
+		local item = data and data.EquippedSpells and data.EquippedSpells[2]
+		if item then
+			print("[SpellCaster] Item slot 2: " .. tostring(item))
+		end
+
+	-- Key 3 = Item Slot 3 (generic item)
+	elseif input.KeyCode == Enum.KeyCode.Three then
+		local item = data and data.EquippedSpells and data.EquippedSpells[3]
+		if item then
+			print("[SpellCaster] Item slot 3: " .. tostring(item))
+		end
+
+	-- Key 4 = WEAPON SLOT (click to attack with weapon)
+	elseif input.KeyCode == Enum.KeyCode.Four then
 		local wpn = data and data.EquippedSpells and data.EquippedSpells[4]
+		local target = getTargetPosition()
 		if wpn then
 			if cooldowns["WpnAttack"] and cooldowns["WpnAttack"] > os.clock() then return end
 			local sp = SpellsConfig.GetSpell(wpn)
 			if not sp then return end
 			cooldowns["WpnAttack"] = os.clock() + (sp.Cooldown or 0.8)
-			StaffFireProjectile:FireServer(wpn, mouse.Hit.Position)
+			StaffFireProjectile:FireServer(wpn, target)
 		end
+
+	-- ═══ SPELL KEYS (Z, X, C, V) ═══
+	elseif input.KeyCode == Enum.KeyCode.Z then castSpellBar(1)
+	elseif input.KeyCode == Enum.KeyCode.X then castSpellBar(2)
+	elseif input.KeyCode == Enum.KeyCode.C then castSpellBar(3)
+	elseif input.KeyCode == Enum.KeyCode.V then castSpellBar(4)
+
+	-- Movement keys
 	elseif input.KeyCode == Enum.KeyCode.Q then performDash()
 	elseif input.KeyCode == Enum.KeyCode.Space then
 		local char = player.Character
@@ -215,7 +366,7 @@ UIS.InputBegan:Connect(function(input, gpe)
 			currentJumps += 1
 			canDoubleJump = false
 			hum:ChangeState(Enum.HumanoidStateType.Jumping)
-			
+
 			-- Expanding jump ring effect at feet
 			local ringPart = Instance.new("Part")
 			ringPart.Shape = Enum.PartType.Cylinder
@@ -227,7 +378,7 @@ UIS.InputBegan:Connect(function(input, gpe)
 			ringPart.Anchored = true
 			ringPart.CanCollide = false
 			ringPart.Parent = workspace
-			
+
 			TS:Create(ringPart, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 				Size = Vector3.new(0.2, 12, 12),
 				Transparency = 1
